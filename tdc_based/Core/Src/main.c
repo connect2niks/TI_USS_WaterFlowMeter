@@ -21,20 +21,58 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#ifdef __GNUC__
+  /* With GCC, small printf (option LD Linker->Libraries->Small printf
+     set to 'Yes') calls __io_putchar() */
+  #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+  #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif /* __GNUC__ */
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 /* USER CODE END PD */
-
+void TDC7200_SPIByteWriteReg(uint8_t addr, uint8_t value);
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+/************************************************************
+* TDC7200 REGISTER SET ADDRESSES
+************************************************************/
+
+#define TDC7200_CONFIG1_REG						0x00
+#define TDC7200_CONFIG2_REG						0x01
+#define TDC7200_INTRPT_STATUS_REG				0x02
+#define TDC7200_INTRPT_MASK_REG					0x03
+#define TDC7200_COARSE_COUNTER_OVH_REG			0x04
+#define TDC7200_COARSE_COUNTER_OVL_REG			0x05
+#define TDC7200_CLOCK_COUNTER_OVH_REG			0x06
+#define TDC7200_CLOCK_COUNTER_OVL_REG			0x07
+#define TDC7200_CLOCK_COUNTER_STOP_MASKH_REG	0x08
+#define TDC7200_CLOCK_COUNTER_STOP_MASKL_REG	0x09
+
+#define TDC7200_TIME1_REG						0x10
+#define TDC7200_CLOCK_COUNT1_REG				0x11
+#define TDC7200_TIME2_REG						0x12
+#define TDC7200_CLOCK_COUNT2_REG				0x13
+#define TDC7200_TIME3_REG						0x14
+#define TDC7200_CLOCK_COUNT3_REG				0x15
+#define TDC7200_TIME4_REG						0x16
+#define TDC7200_CLOCK_COUNT4_REG				0x17
+#define TDC7200_TIME5_REG						0x18
+#define TDC7200_CLOCK_COUNT5_REG				0x19
+#define TDC7200_TIME6_REG						0x1A
+#define TDC7200_CALIBRATION1_REG				0x1B
+#define TDC7200_CALIBRATION2_REG				0x1C
+
+#define TDC7200_TOTAL_NUM_CONFIG_REG			10
+#define TDC7200_TOTAL_NUM_RESULT_REG			39
+
 
 /* USER CODE END PM */
 
@@ -44,7 +82,8 @@ SPI_HandleTypeDef hspi2;
 UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
-
+void TDC7200_reg_init(void);
+void tdc_trigger_measure(void);	
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -53,19 +92,32 @@ static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
-uint8_t byte_data[2],byte_data1[2];
-uint8_t b[3],b0[2],b1[2],b2[2],b3[2],b4[2],b5[2],b6[2],b7[2],b8[2],b9[2];
-//uint8_t data1[8];//={0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11};//{30,31,32,44,34,35,36,37,38,39};//{0x02,0x44,0x07,0x07,0xFF,0xFF,0xFF,0xFF,0x00,0x00};
-//uint8_t data[8]={0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 
-//uint8_t data[8]={0x11,0x11};
+uint8_t b[3],b0[2],b1[2],b2[2],b3[2],b4[2],b5[2],b6[2],b7[2],b8[2],b9[2],i0[3];
+uint8_t temp[3];
+
+uint8_t a0,a1,a2;
+uint8_t d0[4],d1[4],d2[4],d3[4],d5[4];
 /* USER CODE END PFP */
-
+uint8_t TDC7200_reg_local_copy[10] = {0x02, 0x40, 0x07, 0x07, 0xFF, 0xFF, 0xFF, 0xFF, 0x0, 0x0 };
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 int i=0;
+uint8_t byte_data[3];
+uint8_t read_data[2];
 /* USER CODE END 0 */
+uint8_t upStreamBuf[48];
 
+    long int uTime[2];
+    long int uClk;
+    long int uCal[2];
+ long int us, ur;
+    long int ds, dr;
+    long int dn;
+    long int dmy;
+int flag=0;
+long double CLOCKperiod;
+long double calCount,normLSB,TOF,LSB,mTOF;
 /**
   * @brief  The application entry point.
   * @retval int
@@ -96,155 +148,166 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI2_Init();
   MX_USART6_UART_Init();
+	printf("\n\rTDC7200\n\r ");
+		printf("\n\rInitializing TDC7200 Registers.... ");
   /* USER CODE BEGIN 2 */
-	
 HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);//en
 HAL_Delay(1000);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);//en
-		
-////0x00
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b0[0]=0x00 ;//| 0x40;;
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);//en	
 
-HAL_SPI_Transmit(&hspi2,b0 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b0[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b[0]=(0x00)|(0x40);
-b[1]=0x02;
-HAL_SPI_Transmit(&hspi2,b ,2, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b[0]=0x00;
-HAL_SPI_Receive(&hspi2,&b[2],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x01
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b1[0]=0x01 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b1 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b1[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x02
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b2[0]=0x02 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b2 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b2[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x03
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b3[0]=0x03 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b3 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b3[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x04
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b4[0]=0x04 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b4 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b4[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x05
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b5[0]=0x05 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b5 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b5[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x06
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b6[0]=0x06 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b6 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b6[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x07
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b7[0]=0x07 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b7 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b7[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x08
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b8[0]=0x08 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b8 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b8[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
-
-////0x09
-
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-b9[0]=0x09 ;//| 0x40;;
-
-HAL_SPI_Transmit(&hspi2,b9 ,1, 50);
-
-//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
-
-HAL_SPI_Receive(&hspi2,&b9[1],1, 50);
-HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
-HAL_Delay(1000);
   /* USER CODE END 2 */
+/* init registers of TDC7200 */
+TDC7200_reg_init();
 
-  /* Infinite loop */
+	printf("\n\rClear error flags and reset state machine");
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+temp[0]= 0x02;
+temp[0]|=(0x40);
+temp[1]=0x1F;
+HAL_SPI_Transmit(&hspi2,temp ,2, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+HAL_Delay(1000);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+temp[0]= TDC7200_INTRPT_STATUS_REG;
+HAL_SPI_Transmit(&hspi2,temp ,1, 50);
+HAL_SPI_Receive(&hspi2,&temp[2],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+HAL_Delay(1000);
+printf("\n\r set start measurement bit");
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);	
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+byte_data[0]=TDC7200_CONFIG1_REG;
+byte_data[0] |= 0x40;	
+byte_data[1] =0x03;
+HAL_SPI_Transmit(&hspi2,byte_data,2, 50);	
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+HAL_Delay(1/2);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
+HAL_Delay(4);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
+HAL_Delay(1/2);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET);
+
+
+HAL_Delay(3000);
+
+printf("\n\r Measurement Done...Calculating TOF ");
+printf(" \n\r Reading all the result registers");
+
+//INT status
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+i0[0]=0x02 ;//| 0x40;;
+HAL_SPI_Transmit(&hspi2,i0 ,1, 50);
+HAL_SPI_Receive(&hspi2,&i0[1],3, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+
+
+
+//TDC7200_TIME1_REG
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+d0[0]=0x10 ;//| 0x40;;
+HAL_SPI_Transmit(&hspi2,d0 ,1, 50);
+HAL_SPI_Receive(&hspi2,&d0[1],3, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+
+//TDC7200_CLOCK_COUNT1_REG
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+d1[0]=0x11;//| 0x40;
+HAL_SPI_Transmit(&hspi2,d1 ,1, 50);
+HAL_SPI_Receive(&hspi2,&d1[1],3, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+
+//TDC7200_TIME1_REG
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+d5[0]=0x12;//| 0x40;
+HAL_SPI_Transmit(&hspi2,d5 ,1, 50);
+HAL_SPI_Receive(&hspi2,&d5[1],3, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+//TDC7200_CALIBRATION1_REG
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+d2[0]=0x1B ;//| 0x40;;
+HAL_SPI_Transmit(&hspi2,d2 ,1, 50);
+HAL_SPI_Receive(&hspi2,&d2[1],3, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+
+//TDC7200_CALIBRATION2_REG
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+d3[0]=0x1C;//| 0x40;
+HAL_SPI_Transmit(&hspi2,d3 ,1, 50);
+HAL_SPI_Receive(&hspi2,&d3[1],3, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+
+
+//tof ccalculation
+uTime[0]=0;
+uTime[0]=d0[1];
+uTime[0] <<= 8;
+uTime[0]  += d0[2];
+uTime[0] <<= 8;
+uTime[0]  += d0[3];
+
+uTime[1]=0;
+uTime[1]=d5[1];
+uTime[1] <<= 8;
+uTime[1]  += d5[2];
+uTime[1] <<= 8;
+uTime[1]  += d5[3];
+	  
+		uClk   = 0;
+   	uClk   = d1[1];
+   	uClk <<= 8;
+   	uClk  += d1[2];
+   	uClk <<= 8;
+   	uClk  += d1[3];
+	 
+	  uCal[0]  = 0;
+   	uCal[0]   = d2[1];
+   	uCal[0] <<= 8;
+   	uCal[0]  += d2[2];
+    uCal[0] <<= 8;
+   	uCal[0]  += d2[3];		
+		
+		 uCal[1]  = 0;
+   	uCal[1]   = d3[1];
+   	uCal[1] <<= 8;
+   	uCal[1]  += d3[2];
+    uCal[1] <<= 8;
+   	uCal[1]  += d3[3];		
+			
+			
+//		dmy = (uTime[0] - uTime[1])*140625;
+//      dn  = uCal[1] - uCal[0];
+//      us  = dmy / dn;
+
+//      ur  = dmy - us*dn;
+//      dmy = dn / 2;
+//      ur  = (ur*8 + dmy);
+//      ur  = ur / dn;
+//      us  = 8*us + ur;
+//      us  = us + uClk * 125000;
+
+
+  calCount= (	uCal[1]-uCal[0])/(10-1);
+	CLOCKperiod=(8000000);
+	//normLSB=CLOCKperiod/calCount;
+LSB=calCount*8000000;
+normLSB=1/LSB;
+  TOF=(uTime[0]*normLSB)+(uClk/CLOCKperiod)-(uTime[1]*normLSB);  
+ mTOF=TOF*1000;    
+printf("\n\r TOF= %f s",TOF);
+printf("\n\r TOF(in ms)= %f ms",mTOF);
+/* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
@@ -254,7 +317,11 @@ HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
-
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+ //HAL_UART_Transmit(&huart6,(uint8_t*)"Trigger",sizeof("Trigger"),200);
+flag=1;
+}
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -412,6 +479,185 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void TDC7200_reg_init(void)
+{
+	b[0]=0x00;
+	for(int i=0;i<10;i++)
+{
+	b[0]|=(0x40);
+	b[1]=TDC7200_reg_local_copy[i];
+	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+  HAL_SPI_Transmit(&hspi2,b ,2, 50);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+  HAL_Delay(1000);
+	b[0]++;
+}
+  
+
+//Setting CONFIG rEG1 0x00==0x02
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b[0]=(0x00)|(0x40);
+b[1]=0x03;
+HAL_SPI_Transmit(&hspi2,b ,2, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+//0x02==0x07
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b[0]=(0x02)|(0x40);
+b[1]=0x07;
+HAL_SPI_Transmit(&hspi2,b ,2, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+HAL_Delay(1000);
+
+
+printf("\n\r TDC_7200 REGISTER AFTER INITIALIZATION");
+////0x00
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b0[0]=TDC7200_CONFIG1_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b0 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b0[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+printf("\n\r CONFIG1_REG:0x0%x",b0[1]);
+HAL_Delay(1000);
+////0x01
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b1[0]=TDC7200_CONFIG2_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b1 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b1[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r CONFIG2_REG:0x0%x",b1[1]);
+HAL_Delay(1000);
+
+////0x02
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b2[0]=TDC7200_INTRPT_STATUS_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b2 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b2[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r INTRPT_STATUS_REG:0x0%x",b2[1]);
+HAL_Delay(1000);
+
+////0x03
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b3[0]=TDC7200_INTRPT_MASK_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b3 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b3[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r INTRPT_MASK_REG:0x0%x",b3[1]);
+HAL_Delay(1000);
+
+////0x04
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b4[0]=TDC7200_COARSE_COUNTER_OVH_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b4 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b4[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r COARSE_COUNTER_OVH_REG:0x0%x",b4[1]);
+HAL_Delay(1000);
+
+////0x05
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b5[0]=TDC7200_COARSE_COUNTER_OVL_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b5 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b5[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r COARSE_COUNTER_OVL_REG:0x0%x",b5[1]);
+HAL_Delay(1000);
+
+////0x06
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b6[0]=TDC7200_CLOCK_COUNTER_OVH_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b6 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b6[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r CLOCK_COUNTER_OVH_REG:0x0%x",b6[1]);
+HAL_Delay(1000);
+
+////0x07
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b7[0]=TDC7200_CLOCK_COUNTER_OVL_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b7 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b7[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r CLOCK_COUNTER_OVL_REG:0x0%x",b7[1]);
+HAL_Delay(1000);
+
+////0x08
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b8[0]=TDC7200_CLOCK_COUNTER_STOP_MASKH_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b8 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b8[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r CLOCK_COUNTER_STOP_MASKH_REG:0x0%x",b8[1]);
+HAL_Delay(1000);
+
+////0x09
+
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+b9[0]=TDC7200_CLOCK_COUNTER_STOP_MASKL_REG ;//| 0x40;;
+
+HAL_SPI_Transmit(&hspi2,b9 ,1, 50);
+
+//HAL_SPI_Transmit(&hspi2,byte_data ,1, 50);
+
+HAL_SPI_Receive(&hspi2,&b9[1],1, 50);
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);	
+printf("\n\r CLOCK_COUNTER_STOP_MASKL_REG:0x0%x",b9[1]);
+HAL_Delay(1000);
+
+	
+	
+}	
+PUTCHAR_PROTOTYPE
+{
+  /* Place your implementation of fputc here */
+  /* e.g. write a character to the EVAL_COM1 and Loop until the end of transmission */
+  HAL_UART_Transmit(&huart6, (uint8_t *)&ch, 1, 0xFFFF);
+
+  return ch;
+}
 
 /* USER CODE END 4 */
 
